@@ -78,7 +78,7 @@ module.exports = env => {
             hot: true,
             port: 8088,
             inline: true,
-            host: '127.0.0.1',
+            host: '0.0.0.0',
             publicPath:'/dist/',
             compress: true,
             stats: 'errors-only', //只在发生错误时输出
@@ -94,6 +94,7 @@ module.exports = env => {
                 use: {
                     loader:'babel-loader',
                     options:{
+                        plugins: ["@babel/plugin-transform-runtime", "@babel/plugin-transform-modules-commonjs"],
                         cacheDirectory:true,
                         compact:true
                     }

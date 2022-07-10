@@ -5,13 +5,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="keywords" content="Valine,极简风,评论系统,极简风评论系统,comment system">
-    <meta name="description" content="Valine - 一款基于Leancloud的极简风评论系统">
+    <meta name="description" content="Valine - 一款基于MemFireCloud的极简风评论系统">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black">
     <meta content="telephone=no,email=no" name="format-detection">
     <meta http-equiv="X-UA-Compatible" content="IE=Edge,Chrome=1">
-    <title>Valine - A simple comment system based on Leancloud.</title>
+    <title>Valine - A simple comment system based on MemFireCloud.</title>
     <style>
         * {
             margin: 0 auto;
@@ -121,7 +121,6 @@
             color: #9c9c9c;
         }
     </style>
-    <script src="https://cdn1.lncld.net/static/js/3.0.4/av-min.js"></script>
     <script src="./dist/Valine.min.js"></script>
 </head>
 
@@ -130,7 +129,7 @@
     <header>
         <div class="container">
             <a href="./" class="logo">Valine</a>
-            <span class="sub">A simple comment system based on Leancloud.</span>
+            <span class="sub">A simple comment system based on MemFireCloud.</span>
         </div>
     </header>
     <div class="container">
@@ -144,14 +143,14 @@
         </div>
     </div>
     <div class="copy">
-        &copy; 2017 <a href="https://github.com/xCss" target="_blank">云淡风轻</a>
+        &copy; 2022 <a href="https://github.com/TiannV/Valine" target="_blank">TiannV</a>
     </div>
     <script>
         var valine = new Valine();
         valine.init({
             el: '.comment',
-            app_id: '3GiiCyXCrGbOIH3EelCfJ6yw-gzGzoHsz',
-            app_key: 'iuneD4hXPQImdHQSRE0aOcRF',
+            app_key: '填入appkey',
+            app_url: '填入app_url',
             placeholder: 'ヾﾉ≧∀≦)o来啊，快活啊!',
             path: window.location.pathname,
             avatar:'mm', // 1.1.7 新增(mm/identicon/monsterid/wavatar/retro)
@@ -168,8 +167,8 @@
 
         window.onload = function() {
             var iframes = document.querySelectorAll('iframe');
-            iframes[0].setAttribute('src', 'https://ghbtns.com/github-btn.html?user=xCss&repo=valine&type=watch&count=true');
-            iframes[1].setAttribute('src', 'https://ghbtns.com/github-btn.html?user=xCss&type=follow&count=true');
+            iframes[0].setAttribute('src', 'https://ghbtns.com/github-btn.html?user=TiannV&repo=valine&type=watch&count=true');
+            iframes[1].setAttribute('src', 'https://ghbtns.com/github-btn.html?user=TiannV&type=follow&count=true');
         }
     </script>
 </body>

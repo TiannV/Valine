@@ -1,13 +1,17 @@
 const VERSION = require('../package.json').version;
 const md5 = require('blueimp-md5');
-const marked = require('marked');
+const {marked} = require('marked');
 const autosize = require('autosize');
 const timeAgo = require('./utils/timeago');
 const detect = require('./utils/detect');
 const Utils = require('./utils/domUtils');
 const Emoji = require('./plugins/emojis');
 const hanabi = require('hanabi');
-const AV = require('leancloud-storage')
+// const AV = require('leancloud-storage')
+const client = require('@supabase/supabase-js')
+// import { createClient } from '@supabase/supabase-js'
+var supabase;
+
 const defaultComment = {
     comment: '',
     nick: 'Anonymous',
@@ -16,6 +20,33 @@ const defaultComment = {
     ua: navigator.userAgent,
     url: ''
 };
+
+class Comment {
+    constructor() {
+        this.comment = defaultComment.comment;
+        this.nick = defaultComment.nick;
+        this.mail = defaultComment.mail;
+        this.link = defaultComment.link;
+        this.ua = defaultComment.ua;
+        this.url = defaultComment.url;
+        this.id = '';
+        this.pid = '';
+        this.rid = '';
+    }
+}
+
+function guid() {
+
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+
+        var r = Math.random()*16|0, v = c == 'x' ? r : (r&0x3|0x8);
+
+        return v.toString(16);
+
+    });
+
+}
+
 const locales = {
     'zh-cn': {
         head: {
@@ -62,7 +93,7 @@ const locales = {
             link: 'Website(http://)',
         },
         tips: {
-            comments: 'Comments',
+            comments: 'comments',
             sofa: 'No comments yet.',
             busy: 'Submit is busy, please wait...',
             again: 'Sorry, this is a wrong calculation.'
@@ -109,6 +140,30 @@ function ValineFactory(option) {
     root.init(option);
     // Valine init
     return root;
+}
+
+const insertComment = async(comment) => {
+    let {data, error} = await supabase
+    .from('comments')
+    .insert([
+      { 
+        id: comment['id'],
+        url: comment['url'],
+        pid: comment['pid'],
+        rid: comment['rid'],
+        createdat:comment['createdat'],
+        comment: comment['comment'],
+        nick: comment['nick'],
+        mail: comment['mail'],
+        link: comment['link'],
+        ua: comment['ua'],
+        }
+    ])
+    if (error) {
+        console.log(error.message)
+        return null
+    }
+    return data[0]
 }
 
 /**
@@ -180,33 +235,11 @@ ValineFactory.prototype._init = function(){
                 }
         }
 
-        let id = root.config.app_id || root.config.appId;
+        let url = root.config.app_url || root.config.appUrl;
         let key = root.config.app_key || root.config.appKey;
-        if (!id || !key) throw 99;
-
-        let prefix = 'https://';
-        let serverURLs = '';
-        if(!root.config['serverURLs']){
-            switch (id.slice(-9)) {
-                // TAB 
-                case '-9Nh9j0Va':
-                    prefix += 'tab.';
-                    break;
-                // US
-                case '-MdYXbMMI':
-                    prefix += 'us.';
-                    break;
-                default:
-                    break;
-            }
-        }
-        serverURLs = root.config['serverURLs'] || prefix + 'avoscloud.com';
+        if (!url || !key) throw 99;
         try {
-            AV.init({
-                appId: id,
-                appKey: key,
-                serverURLs: serverURLs,
-            });
+            supabase = client.createClient(url, key)
         } catch (ex) { }
 
         // get comment count
@@ -215,18 +248,12 @@ ValineFactory.prototype._init = function(){
             if (el) {
                 let k = Utils.attr(el, 'data-xid');
                 if (k) {
-                    root.Q(k).count().then(n => {
-                        el.innerText = n
-                    }).catch(ex => {
-                        el.innerText = 0
-                    })
+                    let data = root.Q(k);
+                    console.log("comments count: ",data.length)
+                    el.innerText = data.length;
                 }
             }
         })
-
-        // Counter
-        visitor && CounterFactory.add(AV.Object.extend('Counter'),root.config.path);
-
 
         let el = root.config.el || null;
         let _el = Utils.findAll(document, el);
@@ -325,118 +352,36 @@ ValineFactory.prototype._init = function(){
     }
 }
 
-// 新建Counter对象
-let createCounter = function (Counter, o) {
-    let newCounter = new Counter();
-    let acl = new AV.ACL();
-    acl.setPublicReadAccess(true);
-    acl.setPublicWriteAccess(true);
-    newCounter.setACL(acl);
-    newCounter.set('url', o.url)
-    newCounter.set('xid', o.xid)
-    newCounter.set('title', o.title)
-    newCounter.set('time', 1)
-    newCounter.save().then(ret => {
-        Utils.find(o.el, '.leancloud-visitors-count').innerText = 1
-    }).catch(ex => {
-        console.log(ex)
-    });
-}
-let CounterFactory = {
-    add(Counter,currPath) {
-        let root = this
-        let lvs = Utils.findAll(document, '.leancloud_visitors,.leancloud-visitors');
-        if (lvs.length) {
-            let lv = lvs[0];
-            let url = Utils.attr(lv, 'id');
-            let title = Utils.attr(lv, 'data-flag-title');
-            let xid = encodeURI(url);
-            let o = {
-                el: lv,
-                url: url,
-                xid: xid,
-                title: title
-            }
-            // 判断是否需要+1
-            if (decodeURI(url) === decodeURI(currPath)) {
-                let query = new AV.Query(Counter);
-                query.equalTo('url', url);
-                query.find().then(ret => {
-                    if (ret.length > 0) {
-                        let v = ret[0];
-                        v.increment("time");
-                        v.save().then(rt => {
-                            Utils.find(lv, '.leancloud-visitors-count').innerText = rt.get('time')
-                        }).catch(ex => {
-                            console.log(ex)
-                        });
-                    } else {
-                        createCounter(Counter, o)
-                    }
-                }).catch(ex => {
-                    ex.code == 101 && createCounter(Counter, o)
-                })
-            } else CounterFactory.show(Counter, lvs)
-        }
-    },
-    show(Counter, lvs) {
-        let COUNT_CONTAINER_REF = '.leancloud-visitors-count';
-
-        // 重置所有计数
-        Utils.each(lvs, (idx, el) => {
-            let cel = Utils.find(el, COUNT_CONTAINER_REF);
-            if (cel) cel.innerText = 0
-        })
-        let urls = [];
-        for (let i in lvs) {
-            if (lvs.hasOwnProperty(i)) urls.push(Utils.attr(lvs[i], 'id'))
-        }
-        if (urls.length) {
-            let query = new AV.Query(Counter);
-            query.containedIn('url', urls);
-            query.find().then(ret => {
-                if (ret.length > 0) {
-                    Utils.each(ret, (idx, item) => {
-                        let url = item.get('url');
-                        let time = item.get('time');
-                        let els = Utils.findAll(document, `.leancloud_visitors[id="${url}"],.leancloud-visitors[id="${url}"]`);
-                        Utils.each(els, (idx, el) => {
-                            let cel = Utils.find(el, COUNT_CONTAINER_REF);
-                            if (cel) cel.innerText = time
-                        })
-                    });
-                }
-            }).catch(ex => {
-                console.error(ex)
-            })
-        }
-    }
-}
-
-/**
- * LeanCloud SDK Query Util
- * @param {String} url 
- * @param {String} id
- */
 ValineFactory.prototype.Q = function (k) {
+    console.log("ValineFactory.prototype.Q ");
     let root = this;
     let len = arguments.length;
+    var query
     if (len == 1) {
-        let notExist = new AV.Query(root['config']['clazzName']);
-        notExist.doesNotExist('rid');
-        let isEmpty = new AV.Query(root['config']['clazzName']);
-        isEmpty.equalTo('rid', '');
-        let q = AV.Query.or(notExist, isEmpty);
-        if (k === '*') q.exists('url');
-        else q.equalTo('url', decodeURI(k));
-        q.addDescending('createdAt');
-        q.addDescending('insertedAt');
-        return q;
+        if (k === '*') {
+            query = supabase.from('comments')
+            .select()
+            .eq('rid', '')
+            .neq('url','')
+        } else {
+            query = supabase.from('comments')
+            .select()
+            .eq('rid', '')
+            .eq('url',decodeURI(k))
+        }
+        query = query.order('createdat',{ ascending: false })
+                .order('createdat',{ ascending: false });
     } else {
-        let ids = JSON.stringify(arguments[1]).replace(/(\[|\])/g, '');
-        let cql = `select * from ${root['config']['clazzName']} where rid in (${ids}) order by -createdAt,-createdAt`;
-        return AV.Query.doCloudQuery(cql)
+        let ids = arguments[1];
+        console.log("ids: ", ids);
+        // JSON.stringify(arguments[1]).replace(/(\[|\])/g, '');
+        query =  supabase.from('comments')
+        .select()
+        .in('rid', ids)
+        .order('createdat',{ ascending: false })
     }
+
+    return query;
 }
 
 ValineFactory.prototype.ErrorHandler = function (ex,origin) {
@@ -662,63 +607,89 @@ ValineFactory.prototype.bind = function (option) {
         return vquote
     }
 
-    let query = (no = 1) => {
+    let queryComments = async(no = 1) =>{
         let size = root.config.pageSize;
         let count = Number(Utils.find(root.el, '.vnum').innerText);
         root.loading.show();
-        let cq = root.Q(root.config.path);
-        cq.limit(size);
-        cq.skip((no - 1) * size);
-        cq.find().then(rets => {
-            let len = rets.length;
-            let rids = []
-            for (let i = 0; i < len; i++) {
-                let ret = rets[i];
-                rids.push(ret.id)
-                insertDom(ret, Utils.find(root.el, '.vlist'), !0)
+        let query = root.Q(root.config.path);
+        
+        let {data, error} = await query;
+        if (error) {
+            console.log(error.message);
+            return
+        }
+        console.log("data: ", data)
+        let begin = (no - 1) * size;
+        let end = data.length < begin+size ? data.length:begin+size;
+        let rets = data.slice(begin, end);
+        let len = rets.length;
+        let rids = []
+        for (let i = 0; i < len; i++) {
+            let ret = rets[i];
+            rids.push(ret.id)
+            let old_data = ret.createdat;
+            ret.createdat = new Date(Date.parse(old_data))
+            insertDom(ret, Utils.find(root.el, '.vlist'), !0)
+        }
+        // load children comment
+        if (rids.length > 0 ) {
+            let query = root.Q(root.config.path, rids)
+            let {data, error} = await query;
+            if (error) {
+                console.log(error.message);
+                return
             }
-            // load children comment
-            root.Q(root.config.path, rids).then(ret => {
-                let childs = ret && ret.results || []
-                for (let k = 0; k < childs.length; k++) {
-                    let child = childs[k];
-                    insertDom(child, createVquote(child.get('rid')))
-                }
+            console.log('data: ', data)
+            let childs = data || []
+            for (let k = 0; k < childs.length; k++) {
+                let child = childs[k];
+                child.createdat = new Date(Date.parse(child.createdat))
+                insertDom(child, createVquote(child.rid))
+            }
+        }
+
+        let _vpage = Utils.find(root.el, '.vpage');
+        _vpage.innerHTML = size * no < count ? `<button type="button" class="vmore vbtn">${root.locale['ctrl']['more']}</button>` : '';
+        let _vmore = Utils.find(_vpage, '.vmore');
+        if (_vmore) {
+            Utils.on('click', _vmore, (e) => {
+                _vpage.innerHTML = '';
+                queryComments(++no);
             })
-            let _vpage = Utils.find(root.el, '.vpage');
-            _vpage.innerHTML = size * no < count ? `<button type="button" class="vmore vbtn">${root.locale['ctrl']['more']}</button>` : '';
-            let _vmore = Utils.find(_vpage, '.vmore');
-            if (_vmore) {
-                Utils.on('click', _vmore, (e) => {
-                    _vpage.innerHTML = '';
-                    query(++no);
-                })
-            }
-            root.loading.hide();
-        }).catch(ex => {
-            root.loading.hide().ErrorHandler(ex,'query')
-        })
+        }
+        root.loading.hide();
+        // }).catch(ex => {
+        //     root.loading.hide().ErrorHandler(ex,'query')
+        // })
     }
-    root.Q(root.config.path).count().then(num => {
+
+    let getComments = async() => {
+        let query = root.Q(root.config.path);
+        let {data, error} = await query;
+        if (error) {
+            console.log(error.message);
+            return
+        }
+        let num = data.length;
         if (num > 0) {
             Utils.attr(Utils.find(root.el, '.vinfo'), 'style', 'display:block;');
             Utils.find(root.el, '.vcount').innerHTML = `<span class="vnum">${num}</span> ${root.locale['tips']['comments']}`;
-            query();
+            queryComments();
         } else {
             root.loading.hide();
         }
-    }).catch(ex => {
-        root.ErrorHandler(ex,'count')
-    });
+    }
+    getComments();
+
 
     let insertDom = (rt, node, mt) => {
-
+        let rootid = rt.rid || rt.id;
         let _vcard = Utils.create('div', {
             'class': 'vcard',
             'id': rt.id
         });
-        let _img = _avatarSetting['hide'] ? '' : `<img class="vimg" src="${_avatarSetting['cdn']+md5(rt.get('mail'))+_avatarSetting['params']}">`;
-        let ua = rt.get('ua') || '';
+        let _img = _avatarSetting['hide'] ? '' : `<img class="vimg" src="${_avatarSetting['cdn']+md5(rt.mail)+_avatarSetting['params']}">`;
+        let ua = rt.ua || '';
         let uaMeta = '';
         if (ua) {
             ua = detect(ua);
@@ -726,19 +697,19 @@ ValineFactory.prototype.bind = function (option) {
             let os = `<span class="vsys">${ua.os} ${ua.osVersion}</span>`;
             uaMeta = `${browser} ${os}`;
         }
-        if(root.config.path === '*') uaMeta = `<a href="${rt.get('url')}" class="vsys">${rt.get('url')}</a>`
+        if(root.config.path === '*') uaMeta = `<a href="${rt.url}" class="vsys">${rt.url}</a>`
         let _nick = '';
-        let _t = rt.get('link')?(/^https?\:\/\//.test(rt.get('link')) ? rt.get('link') : 'http://'+rt.get('link')) : '';
-        _nick = _t ? `<a class="vnick" rel="nofollow" href="${_t}" target="_blank" >${rt.get("nick")}</a>` : `<span class="vnick">${rt.get('nick')}</span>`;
+        let _t = rt.link?(/^https?\:\/\//.test(rt.link) ? rt.link : 'http://'+rt.link) : '';
+        _nick = _t ? `<a class="vnick" rel="nofollow" href="${_t}" target="_blank" >${rt.nick}</a>` : `<span class="vnick">${rt.nick}</span>`;
         _vcard.innerHTML = `${_img}
-            <div class="vh" rootid=${rt.get('rid') || rt.id}>
+            <div class="vh" rootid=${rootid}>
                 <div class="vhead">${_nick} ${uaMeta}</div>
                 <div class="vmeta">
-                    <span class="vtime">${timeAgo(rt.get('insertedAt') || rt.createdAt,root.locale)}</span>
+                    <span class="vtime">${timeAgo(rt.createdat || rt.createdAt,root.locale)}</span>
                     <span class="vat">${root.locale['ctrl']['reply']}</span>
                 </div>
                 <div class="vcontent">
-                    ${xssFilter(rt.get("comment"))}
+                    ${xssFilter(rt.comment)}
                 </div>
             </div>`;
         let _vat = Utils.find(_vcard, '.vat');
@@ -759,6 +730,7 @@ ValineFactory.prototype.bind = function (option) {
         if (_vcontent) expandEvt(_vcontent);
         if (_vat) bindAtEvt(_vat, rt);
         _activeOtherFn()
+
     }
 
 
@@ -795,14 +767,13 @@ ValineFactory.prototype.bind = function (option) {
     // at event
     let bindAtEvt = (el, rt) => {
         Utils.on('click', el, (e) => {
-            let at = `@${Utils.escape(rt.get('nick'))}`;
+            let at = `@${Utils.escape(rt.nick)}`;
             atData = {
                 'at': Utils.escape(at) + ' ',
-                'rid': rt.get('rid') || rt.id,
+                'rid': rt.rid || rt.id,
                 'pid': rt.id,
-                'rmail': rt.get('mail'),
+                'rmail': rt.mail,
             }
-            // console.log(atData)
             Utils.attr(inputs['comment'], 'placeholder', at);
             inputs['comment'].focus();
         })
@@ -866,76 +837,70 @@ ValineFactory.prototype.bind = function (option) {
     }
 
     // setting access
-    let getAcl = () => {
-        let acl = new AV.ACL();
-        acl.setPublicReadAccess(!0);
-        acl.setPublicWriteAccess(!1);
-        return acl;
-    }
+    // let getAcl = () => {
+    //     let acl = new AV.ACL();
+    //     acl.setPublicReadAccess(!0);
+    //     acl.setPublicWriteAccess(!1);
+    //     return acl;
+    // }
 
     let commitEvt = () => {
         Utils.attr(submitBtn, 'disabled', !0);
         root.loading.show(!0);
-        // 声明类型
-        let Ct = AV.Object.extend(root.config.clazzName || 'Comment');
-        // 新建对象
-        let comment = new Ct();
-        defaultComment['url'] = decodeURI(root.config.path);
-        defaultComment['insertedAt'] = new Date();
+        var rid = '';
+        var pid = '';
+
+        let comment = new Comment();
+        comment.url = decodeURI(root.config.path);
+        comment.createdat = new Date();
         if (atData['rid']) {
-            let pid = atData['pid'] || atData['rid'];
-            comment.set('rid', atData['rid']);
-            comment.set('pid', pid);
-            defaultComment['comment'] = defaultComment['comment'].replace('<p>', `<p><a class="at" href="#${pid}">${atData['at']}</a> , `);
+            pid = atData['pid'] || atData['rid'];
+            rid = atData['rid'];
+            comment['comment'] = comment['comment'].replace('<p>', `<p><a class="at" href="#${pid}">${atData['at']}</a> , `);
         }
-        for (let i in defaultComment) {
-            if (defaultComment.hasOwnProperty(i)) {
-                let _v = defaultComment[i];
-                comment.set(i, _v);
-            }
-        }
-        comment.setACL(getAcl());
-        comment.save().then(ret => {
-            defaultComment['nick'] != 'Anonymous' && _store && _store.setItem('ValineCache', JSON.stringify({
-                nick: defaultComment['nick'],
-                link: defaultComment['link'],
-                mail: defaultComment['mail']
-            }));
-            let _count = Utils.find(root.el, '.vnum');
-            let num = 1;
-            try {
-                if (atData['rid']) {
-                    let vquote = Utils.find(root.el, '.vquote[rid="' + atData['rid'] + '"]') || createVquote(atData['rid']);
-                    insertDom(ret, vquote, !0)
+        comment.nick = defaultComment['nick'];
+        comment.pid = pid;
+        comment.rid = rid;
+        comment.id = guid()
+        insertComment(comment);
+        let ret = comment;
+        defaultComment['nick'] != 'Anonymous' && _store && _store.setItem('ValineCache', JSON.stringify({
+            nick: defaultComment['nick'],
+            link: defaultComment['link'],
+            mail: defaultComment['mail']
+        }));
+        let _count = Utils.find(root.el, '.vnum');
+        let num = 1;
+        try {
+            if (atData['rid']) {
+                let vquote = Utils.find(root.el, '.vquote[rid="' + atData['rid'] + '"]') || createVquote(atData['rid']);
+                insertDom(ret, vquote, !0)
+            } else {
+                if (_count) {
+                    num = Number(_count.innerText) + 1;
+                    _count.innerText = num;
                 } else {
-                    if (_count) {
-                        num = Number(_count.innerText) + 1;
-                        _count.innerText = num;
-                    } else {
-                        Utils.find(root.el, '.vcount').innerHTML = '<span class="num">1</span> ' + root.locale['tips']['comments']
-                    }
-                    insertDom(ret, Utils.find(root.el, '.vlist'));
-                    root.config.pageSize++
+                    Utils.find(root.el, '.vcount').innerHTML = '<span class="num">1</span> ' + root.locale['tips']['comments']
                 }
-
-                defaultComment['mail'] && signUp({
-                    username: defaultComment['nick'],
-                    mail: defaultComment['mail']
-                });
-
-                atData['at'] && atData['rmail'] && root.notify && mailEvt({
-                    username: atData['at'].replace('@', ''),
-                    mail: atData['rmail']
-                });
-                Utils.removeAttr(submitBtn, 'disabled');
-                root.loading.hide();
-                reset();
-            } catch (ex) {
-                root.ErrorHandler(ex,'save');
+                insertDom(ret, Utils.find(root.el, '.vlist'));
+                root.config.pageSize++
             }
-        }).catch(ex => {
-            root.ErrorHandler(ex,'commitEvt');
-        })
+
+            defaultComment['mail'] && signUp({
+                username: defaultComment['nick'],
+                mail: defaultComment['mail']
+            });
+
+            atData['at'] && atData['rmail'] && root.notify && mailEvt({
+                username: atData['at'].replace('@', ''),
+                mail: atData['rmail']
+            });
+            Utils.removeAttr(submitBtn, 'disabled');
+            root.loading.hide();
+            reset();
+        } catch (ex) {
+            root.ErrorHandler(ex,'save');
+        }
     }
 
     let verifyEvt = (fn) => {
@@ -974,16 +939,21 @@ ValineFactory.prototype.bind = function (option) {
     }
 
     let signUp = (o) => {
-        let u = new AV.User();
-        u.setUsername(o.username);
-        u.setPassword(o.mail);
-        u.setEmail(o.mail);
-        u.setACL(getAcl());
-        return u.signUp();
+        const { user, session, error } = supabase.auth.signUp({
+            email: o.mail,
+            password: o.mail,
+          });
+        return user;
+        // let u = new AV.User();
+        // u.setUsername(o.username);
+        // u.setPassword(o.mail);
+        // u.setEmail(o.mail);
+        // // u.setACL(getAcl());
+        // return u.signUp();
     }
 
     let mailEvt = (o) => {
-        AV.User.requestPasswordReset(o.mail).then(ret => {}).catch(e => {
+        supabase.auth.api.resetPasswordForEmail(o.mail).then(ret => {}).catch(e => {
             if (e.code == 1) {
                 root.alert.show({
                     type: 0,
@@ -1061,10 +1031,6 @@ ValineFactory.prototype.bind = function (option) {
         xhr.onerror = function(e){
             console.log(e)
         }
-        // xhr.open('POST', 'https://sm.ms/api/v2/upload?inajax=1',true);
-        // xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded')
-        xhr.open('POST','https://imgkr.com/api/files/upload',true);
-        xhr.send(formData);
     }
 
 }
