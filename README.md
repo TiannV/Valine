@@ -61,7 +61,6 @@ npm install
 npm run build
 ```
 
-```
 
 主要用到的js文件就是打包文件：dist/Valine.min.js
 ## 静态托管
