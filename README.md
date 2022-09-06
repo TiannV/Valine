@@ -55,6 +55,11 @@ valine.init({
     // guest_info: ['nick'] // 默认 ['nick', 'mail', 'link']
 })
 ```
+5.npm install
+6.npm run build
+主要用到的js文件就是打包文件：dist/Valine.min.js
+## 静态托管
+打包全部文件上传到Memfire Cloud的静态托管
 
 ## 在线体验
 https://app.memfiredb.com/cb589ci5g6h46gn9g6q0/
