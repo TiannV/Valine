@@ -55,9 +55,9 @@ valine.init({
     // guest_info: ['nick'] // 默认 ['nick', 'mail', 'link']
 })
 ```
-5.npm install
+npm install
 ```
-6.npm run build
+npm run build
 ```
 主要用到的js文件就是打包文件：dist/Valine.min.js
 ## 静态托管
